@@ -21,6 +21,7 @@
  * Fog (mode 5) and stencil (D24S8) as in pica_sw.c. Not yet: gas, procedural textures, cube/shadow/projected textures, logic ops. */
 #include "pica_int.h"
 #include <vulkan/vulkan.h>
+#include "vk_android.h"
 #include <stdio.h>
 #include <time.h>
 #include <stdlib.h>

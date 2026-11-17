@@ -21,6 +21,7 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_vulkan.h>
 #include <vulkan/vulkan.h>
+#include "vk_android.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -286,7 +287,12 @@ static int create_swapchain(void) {
     VkSwapchainCreateInfoKHR ci = { .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .surface = surf, .minImageCount = n,
         .imageFormat = sc_format, .imageColorSpace = cs, .imageExtent = sc_extent, .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+#ifdef __ANDROID__   /* the compositor rotates; currentExtent is already in the current (landscape) orientation */
+        .preTransform = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR : caps.currentTransform,
+        .compositeAlpha = (caps.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) ? VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR : VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+#else
         .preTransform = caps.currentTransform, .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+#endif
         .presentMode = VK_PRESENT_MODE_FIFO_KHR, .clipped = VK_TRUE, .oldSwapchain = swap };
     VkSwapchainKHR old = swap;
     VK(vkCreateSwapchainKHR(dev, &ci, NULL, &swap));
@@ -359,6 +365,9 @@ int video_init(int scale) {
         .enabledExtensionCount = vk13 ? 2 : 1, .ppEnabledExtensionNames = dext };
     if (!vk13) fprintf(stderr, "video: no Vulkan 1.3 dynamic rendering/push descriptors: hardware PICA renderer and GPU presenter unavailable\n");
     VK(vkCreateDevice(phys, &dci, NULL, &dev));
+#ifdef __ANDROID__
+    if (vk13 && vk_android_load(dev)) { fprintf(stderr, "video: Vulkan 1.3 commands missing: hardware renderer off\n"); vk13 = 0; }
+#endif
     vkGetDeviceQueue(dev, qfam, 0, &queue);
     /* swapchain format first (the presenter's target uses it), then the presenter, then the swapchain-sized resources */
     { uint32_t nf = 0; vkGetPhysicalDeviceSurfaceFormatsKHR(phys, surf, &nf, NULL); VkSurfaceFormatKHR fm[64]; if (nf > 64) nf = 64; vkGetPhysicalDeviceSurfaceFormatsKHR(phys, surf, &nf, fm);
@@ -599,12 +608,12 @@ static void next_layout(void) {
 
 /* hotkeys (never passed to the game): F11 / Alt+Enter fullscreen, F9 next layout. Returns 1 when the key was a hotkey. */
 static int hotkey(const SDL_KeyboardEvent *k) {
-    if (k->type != SDL_KEYDOWN || k->repeat) return ov_open || k->keysym.sym == SDLK_F11 || k->keysym.sym == SDLK_F9 || k->keysym.sym == SDLK_F1 || (k->keysym.sym == SDLK_RETURN && (k->keysym.mod & KMOD_ALT));
+    if (k->type != SDL_KEYDOWN || k->repeat) return ov_open || k->keysym.sym == SDLK_F11 || k->keysym.sym == SDLK_F9 || k->keysym.sym == SDLK_F1 || k->keysym.sym == SDLK_AC_BACK || (k->keysym.sym == SDLK_RETURN && (k->keysym.mod & KMOD_ALT));
     if (k->keysym.sym == SDLK_F11 || (k->keysym.sym == SDLK_RETURN && (k->keysym.mod & KMOD_ALT))) {
         opt_fs = opt_fs ? 0 : fs_last; apply_fullscreen(); return 1;
     }
     if (k->keysym.sym == SDLK_F9) { next_layout(); return 1; }
-    if (k->keysym.sym == SDLK_F1) { ov_toggle(); return 1; }
+    if (k->keysym.sym == SDLK_F1 || k->keysym.sym == SDLK_AC_BACK) { ov_toggle(); return 1; }   /* AC_BACK: Android's Back button */
     if (ov_open) { SDL_Keycode c = k->keysym.sym;
         ov_input(c == SDLK_UP, c == SDLK_DOWN, c == SDLK_LEFT, c == SDLK_RIGHT || c == SDLK_RETURN, c == SDLK_ESCAPE); return 1; }
     return 0;
@@ -710,6 +719,18 @@ int video_frame(void) {
     while (SDL_PollEvent(&e)) {
         switch (e.type) {
         case SDL_QUIT: return 0;
+#ifdef __ANDROID__
+        case SDL_APP_WILLENTERBACKGROUND:   /* the native window is about to be destroyed: let go of everything that uses it */
+            if (surf) { pthread_mutex_lock(&queue_lock); vkDeviceWaitIdle(dev); pthread_mutex_unlock(&queue_lock);
+                if (swap) vkDestroySwapchainKHR(dev, swap, NULL); swap = VK_NULL_HANDLE; vkDestroySurfaceKHR(inst, surf, NULL); surf = VK_NULL_HANDLE; }
+            break;
+        case SDL_APP_DIDENTERFOREGROUND:
+            if (!surf && SDL_Vulkan_CreateSurface(win, inst, &surf)) {
+                VkBool32 pres = 0; vkGetPhysicalDeviceSurfaceSupportKHR(phys, qfam, surf, &pres);
+                if (!pres || create_swapchain()) fprintf(stderr, "video: could not present again after resuming\n");
+            } else if (!surf) fprintf(stderr, "video: surface: %s\n", SDL_GetError());
+            break;
+#endif
         case SDL_CONTROLLERDEVICEADDED: case SDL_JOYDEVICEADDED: if (!g_input_none) pad_open(e.cdevice.which); break;
         case SDL_CONTROLLERDEVICEREMOVED: if (gc && e.cdevice.which == SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gc))) { SDL_GameControllerClose(gc); gc = NULL; input_pad_stick(0, 0); for (int b = 0; b < 12; b++) input_pad_button(b, 0); } break;
         case SDL_JOYDEVICEREMOVED: if (joy && e.jdevice.which == SDL_JoystickInstanceID(joy)) { SDL_JoystickClose(joy); joy = NULL; input_pad_stick(0, 0); for (int b = 0; b < 12; b++) input_pad_button(b, 0); } break;
@@ -752,6 +773,7 @@ int video_frame(void) {
         d[0] = d2[0] = (band & 1) ? 255 : 0; d[1] = d2[1] = (band & 2) ? 255 : 0; d[2] = d2[2] = (band & 4) ? 255 : 0;
     }
 
+    if (!surf) return 1;   /* Android, in the background */
     /* window resized or swapchain lost: rebuild before drawing */
     static int last_dw = -1, last_dh = -1; int dw, dh; SDL_Vulkan_GetDrawableSize(win, &dw, &dh);
     if (last_dw >= 0 && (dw != last_dw || dh != last_dh)) { if (recreate_swapchain()) return 0; }
@@ -845,7 +867,11 @@ int video_frame(void) {
     r = vkQueuePresentKHR(queue, &pi);
     pthread_mutex_unlock(&queue_lock);
     if (r != VK_SUCCESS) { g_vid_present_fail++; g_vid_last_err = r; } else g_vid_presented++;
+#ifdef __ANDROID__   /* SUBOPTIMAL whenever the compositor rotates for us (identity pre-transform): not a reason to rebuild */
+    if (r == VK_ERROR_OUT_OF_DATE_KHR) recreate_swapchain();
+#else
     if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) recreate_swapchain();
+#endif
     return 1;
 }
 

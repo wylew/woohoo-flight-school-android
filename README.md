@@ -4,6 +4,9 @@ Play your own copy of *Pilotwings Resort* (3DS, USA) as a native PC program. The
 from your dump into C (static recompilation), build it with your compiler, and run it. Nothing from the game is
 included in this repository. How it works: [docs/architecture.md](docs/architecture.md).
 
+> **Android (experimental, this fork):** build an APK for your own phone with one click on Bazzite/Linux:
+> `./android-builder.sh --install`. See [docs/android.md](docs/android.md).
+
 ![Title screen at 4x resolution](docs/screenshots/title.jpg)
 
 | | |
