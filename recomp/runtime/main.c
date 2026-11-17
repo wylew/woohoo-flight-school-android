@@ -20,6 +20,10 @@
 #include <windows.h>
 #include <timeapi.h>
 #endif
+#ifdef __ANDROID__
+#include <SDL2/SDL.h>   /* SDL_main: SDLActivity loads libmain.so and calls main() through it */
+int android_setup(const char **data_dir);
+#endif
 
 void f_00100000(CPU *c);   /* ExeFS entry point */
 
@@ -56,6 +60,10 @@ int main(int argc, char **argv) {
 #else
     setvbuf(stdout, NULL, _IOLBF, 0);
 #endif
+#ifdef __ANDROID__
+    if (android_setup(&dir)) { fprintf(stderr, "pwr: Android setup failed\n");
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Woohoo! Flight School", "Could not prepare the game files (storage full?). Details in Android/data/<app>/files/pwr.log.", NULL); return 1; }
+#endif
     settings_file(&scale);
 #ifdef _WIN32
     timeBeginPeriod(1);   /* sleeps (the 60 Hz loop, the DSP clock's ~5 ms ticks) otherwise round up to the 15.6 ms tick */
@@ -82,7 +90,11 @@ int main(int argc, char **argv) {
     k_init();
     snprintf(path, sizeof path, "%s/exheader.bin", dir);
     { FILE *f = fopen(path, "rb"); uint8_t pr; if (f && !fseek(f, 0x20F, SEEK_SET) && fread(&pr, 1, 1, f) == 1) g_main_prio = pr; if (f) fclose(f); }
-    if (video_init(scale)) { fprintf(stderr, "pwr: video init failed\n"); return 1; }
+    if (video_init(scale)) { fprintf(stderr, "pwr: video init failed\n");
+#ifdef __ANDROID__
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Woohoo! Flight School", "Vulkan could not start on this device. Details in pwr.log.", NULL);
+#endif
+        return 1; }
     fprintf(stderr, "pwr: boot (input=%s, audio=%s)\n", g_input_none ? "none" : "default", g_mute ? "muted" : "on");
 
     volatile int *done = k_start_main(f_00100000);

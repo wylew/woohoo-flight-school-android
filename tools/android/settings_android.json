@@ -1,0 +1,14 @@
+{
+  "layout": "large",
+  "auto_gameplay": "large",
+  "aspect": "keep",
+  "filter": "sharp",
+  "fsr_sharpness": 0.25,
+  "resolution": 1,
+  "aniso": 1,
+  "show_fps": true,
+  "select_layout": true,
+  "free_look": false,
+  "draw_distance": 1,
+  "mute": false
+}
