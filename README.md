@@ -101,6 +101,11 @@ python3 tools/pipeline.py run --profile default
 python3 tools/pipeline.py profiles create alice
 ```
 
+## Android (beta)
+
+An Android app builds the game on the phone from your dump and shows one screen at a time, with on-screen controls. See
+[android/README.md](android/README.md).
+
 ## Saving
 
 The game saves nothing during the first trial flights. To keep your pilot, end the trial-flight period: pause, choose

@@ -13,6 +13,14 @@
 
 uint8_t *g_mem;
 
+#ifdef PWR_DYNAMIC_GAME
+/* Android: the generated code is compiled on the phone by libtcc and loaded at start (android/app/src/main/cpp/
+   pwr_game_load.c), which sets the table from the loaded code */
+const FnEntry *g_dyn_fn_table; unsigned g_dyn_fn_count;
+#define g_fn_table g_dyn_fn_table
+#define g_fn_count g_dyn_fn_count
+#endif
+
 #ifdef _WIN32
 /* Windows: the 4 GiB are only reserved; a page is committed (zero-filled) the first time anything touches it, as Linux's
    MAP_NORESERVE does, so the commit charge stays near what the game uses */

@@ -61,12 +61,21 @@ def locate_ncch(f):
             return align(hs)+align(cs)+align(ts)+align(ms),'cia'
     raise ValueError('not a CIA, CCI/.3ds or NCCH file')
 
+def _plaintext(f,base,h):
+    """some decryption tools (xorpad-based ones) decrypt the contents but leave the NoCrypto flag unset: the ExeFS header
+    then holds readable section names and the RomFS starts with its IVFC magic"""
+    exefs=struct.unpack_from('<I',h,0x1a0)[0]*0x200; romfs=struct.unpack_from('<I',h,0x1b0)[0]*0x200
+    if not exefs or not romfs: return False
+    f.seek(base+exefs); eh=f.read(0xa0); f.seek(base+romfs); iv=f.read(4)
+    names=[eh[i*16:i*16+8].rstrip(b'\0') for i in range(10)]
+    return iv==b'IVFC' and b'.code' in names and all(all(32<c<127 for c in n) for n in names)
+
 def ncch_info(f,base):
     """header fields of the NCCH at base: program id, product code, encryption"""
     f.seek(base); h=f.read(0x200)
     if h[0x100:0x104]!=b'NCCH': raise ValueError('content 0 is not an NCCH')
     return dict(program_id=struct.unpack_from('<Q',h,0x118)[0], product=h[0x150:0x160].rstrip(b'\0').decode('ascii','replace'),
-                nocrypto=bool(h[0x18f]&4), header=h)
+                nocrypto=bool(h[0x18f]&4) or _plaintext(f,base,h), header=h)
 
 def extract(src,out,runtime_only=False,log=print):
     f=open(src,'rb'); base,kind=locate_ncch(f); info=ncch_info(f,base); h=info['header']

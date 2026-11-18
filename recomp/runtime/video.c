@@ -62,13 +62,18 @@ unsigned g_vid_acquire_fail, g_vid_present_fail, g_vid_presented; int g_vid_last
 #define VK(x) do { VkResult r_ = (x); if (r_ != VK_SUCCESS) { fprintf(stderr, "video: %s failed (%d)\n", #x, r_); return -1; } } while (0)
 
 /* ---------------- options ---------------- */
-enum { L_STACKED, L_SIDE, L_LARGE, L_TOP, L_BOTTOM, L_AUTO, L_COUNT };
-static const char *layout_names[L_COUNT] = { "stacked", "side", "large", "top", "bottom", "auto" };
+enum { L_STACKED, L_SIDE, L_LARGE, L_TOP, L_BOTTOM, L_AUTO, L_SINGLE, L_COUNT };
+static const char *layout_names[L_COUNT] = { "stacked", "side", "large", "top", "bottom", "auto", "single" };
 enum { F_NEAREST, F_LINEAR, F_SHARP, F_FSR, F_FXAA, F_COUNT };
 static const char *filter_names[F_COUNT] = { "nearest", "linear", "sharp", "fsr", "fxaa" };
 static const char *aspect_names[3] = { "keep", "integer", "stretch" };
 static const char *fs_names[3] = { "off", "borderless", "exclusive" };
-static int opt_layout = L_STACKED, opt_filter = F_NEAREST, opt_aspect = 0, opt_fs = 0, opt_auto_gameplay = L_LARGE;
+#ifdef __ANDROID__
+#define DEFAULT_LAYOUT L_SINGLE
+#else
+#define DEFAULT_LAYOUT L_STACKED
+#endif
+static int opt_layout = DEFAULT_LAYOUT, opt_filter = F_NEAREST, opt_aspect = 0, opt_fs = 0, opt_auto_gameplay = L_LARGE;
 static int opt_res = 1, opt_aniso = 1, opt_fps = 0; static float opt_sharp = 0.25f;
 static int opt_select_layout = 1;   /* the gamepad's Back/Select button cycles the screen layout instead of pressing 3DS Select */
 static int opt_free_look = 0;       /* right stick orbits the chase camera (freelook.c) */
@@ -102,7 +107,16 @@ static void apply_fullscreen(void) {
 typedef struct { float x, y, w, h; int on; } Rect;   /* window pixels */
 static int auto_state;   /* 0 = menu, 1 = gameplay */
 
-static int effective_layout(void) { return opt_layout == L_AUTO ? (auto_state ? opt_auto_gameplay : L_STACKED) : opt_layout; }
+/* single: one 3DS screen fills the display (phones). The top screen while flying (auto_update), the other one on request
+   (video_swap_screen: the app's swap button; F9 and the pad's Back/Select still cycle all layouts) */
+static int single_bottom;
+static volatile int swap_requested;
+void video_swap_screen(void) { swap_requested = 1; }   /* any thread */
+
+static int effective_layout(void) {
+    if (opt_layout == L_SINGLE) return single_bottom ? L_BOTTOM : L_TOP;
+    return opt_layout == L_AUTO ? (auto_state ? opt_auto_gameplay : L_STACKED) : opt_layout;
+}
 
 /* the layout's canvas in 3DS pixels, scaled into the window by the aspect mode */
 static void layout_rects(int ww, int wh, Rect *top, Rect *bot) {
@@ -130,7 +144,7 @@ static void auto_update(double now, int bottom_click) {
     if (!auto_state) {
         if (!stick) stick_since = -1;
         else if (stick_since < 0) stick_since = now;
-        else if (now - stick_since >= 1.2) auto_state = 1;
+        else if (now - stick_since >= 1.2) { auto_state = 1; single_bottom = 0; }
     } else if ((pressed & 0xC) || bottom_click || now - last_stick > 8.0) { auto_state = 0; stick_since = -1; }
 }
 
@@ -318,7 +332,7 @@ static int recreate_swapchain(void) {
 
 int video_init(int scale) {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS | (g_input_none ? 0 : SDL_INIT_GAMECONTROLLER | SDL_INIT_JOYSTICK))) { fprintf(stderr, "video: SDL_Init: %s\n", SDL_GetError()); return -1; }
-    static const int cw[L_COUNT] = { TOP_W, TOP_W + BOT_W, TOP_W + BOT_W / 2, TOP_W, BOT_W, TOP_W }, chh[L_COUNT] = { 2 * SCR_H, SCR_H, SCR_H, SCR_H, SCR_H, 2 * SCR_H };
+    static const int cw[L_COUNT] = { TOP_W, TOP_W + BOT_W, TOP_W + BOT_W / 2, TOP_W, BOT_W, TOP_W, TOP_W }, chh[L_COUNT] = { 2 * SCR_H, SCR_H, SCR_H, SCR_H, SCR_H, 2 * SCR_H, SCR_H };
     win = SDL_CreateWindow("Woohoo! Flight School", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, cw[opt_layout] * scale, chh[opt_layout] * scale, SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
     if (!win) { fprintf(stderr, "video: SDL_CreateWindow: %s\n", SDL_GetError()); return -1; }
     SDL_SetWindowMinimumSize(win, BOT_W, SCR_H);
@@ -589,7 +603,7 @@ static int ov_input(int up, int down, int left, int right, int close) {
 static double toast_until; static int toast_dirty; static const char *toast_text;
 static double now_s(void);
 static void next_layout(void) {
-    static const char *nice[L_COUNT] = { "Layout: stacked", "Layout: side by side", "Layout: large top", "Layout: top only", "Layout: bottom only", "Layout: auto" };
+    static const char *nice[L_COUNT] = { "Layout: stacked", "Layout: side by side", "Layout: large top", "Layout: top only", "Layout: bottom only", "Layout: auto", "Layout: single screen" };
     opt_layout = (opt_layout + 1) % L_COUNT; ov_dirty = 1;
     toast_text = nice[opt_layout];   /* drawn at the next present, at the UI scale */
     toast_until = now_s() + 1.5; toast_dirty = 1;
@@ -742,7 +756,12 @@ int video_frame(void) {
             break; }
         }
     }
-    if (opt_layout == L_AUTO) auto_update(now_s(), bottom_click);
+    if (swap_requested) {
+        swap_requested = 0;
+        if (opt_layout != L_SINGLE) { opt_layout = L_SINGLE; single_bottom = 1; ov_dirty = 1; settings_save(); }
+        else single_bottom = !single_bottom;
+    }
+    if (opt_layout == L_AUTO || opt_layout == L_SINGLE) auto_update(now_s(), bottom_click);
 
     ScreenSource top, bottom;
     gsp_screens(&top, &bottom); decode_screen(&top, TOP_W, top_px); decode_screen(&bottom, BOT_W, bot_px);

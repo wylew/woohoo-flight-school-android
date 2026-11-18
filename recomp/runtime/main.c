@@ -20,8 +20,17 @@
 #include <windows.h>
 #include <timeapi.h>
 #endif
+#ifdef __ANDROID__
+#include <SDL2/SDL_main.h>   /* main -> SDL_main, which SDLActivity calls */
+#include <unistd.h>
+#endif
 
+#ifdef PWR_DYNAMIC_GAME
+/* Android: the game code was compiled on the phone into object files (--objs=<dir>), loaded here by libtcc */
+int pwr_game_load(const char *obj_dir);
+#else
 void f_00100000(CPU *c);   /* ExeFS entry point */
+#endif
 
 int g_input_none, g_mute;
 extern const char *g_data_dir;
@@ -50,6 +59,22 @@ static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t
 
 int main(int argc, char **argv) {
     const char *dir = "extracted"; int scale = 2;
+#ifdef PWR_DYNAMIC_GAME
+    const char *obj_dir = NULL;
+#endif
+#ifdef __ANDROID__
+    {   /* the desktop launcher starts pwr in the profile folder (pipeline cache, debug dumps): the app passes it in $PWR_CWD */
+        const char *cwd = getenv("PWR_CWD");
+        if (cwd && *cwd && chdir(cwd)) perror("pwr: chdir $PWR_CWD");
+    }
+    {   /* no terminal: the app passes the log file in $PWR_LOG (the previous run kept as .1, as the desktop launcher does) */
+        const char *lp = getenv("PWR_LOG");
+        if (lp && *lp) {
+            char old[4096]; snprintf(old, sizeof old, "%s.1", lp); rename(lp, old);
+            if (freopen(lp, "w", stderr)) { dup2(fileno(stderr), fileno(stdout)); setvbuf(stderr, NULL, _IOLBF, 0); }
+        }
+    }
+#endif
     /* the launcher sends stdout/stderr to the profile's pwr.log: write it line by line (Windows has no line buffering) */
 #ifdef _WIN32
     setvbuf(stdout, NULL, _IONBF, 0);
@@ -64,6 +89,9 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i], "--input=none")) g_input_none = 1;
         else if (!strcmp(argv[i], "--mute")) g_mute = 1;
         else if (!strncmp(argv[i], "--scale=", 8)) scale = atoi(argv[i] + 8) > 0 ? atoi(argv[i] + 8) : 2;
+#ifdef PWR_DYNAMIC_GAME
+        else if (!strncmp(argv[i], "--objs=", 7)) obj_dir = argv[i] + 7;
+#endif
         else if (!strncmp(argv[i], "--", 2) && strchr(argv[i], '=')) {   /* display options: --name=value -> video_option */
             char name[32]; const char *eq = strchr(argv[i], '='); size_t n = (size_t)(eq - argv[i] - 2);
             if (n >= sizeof name) n = sizeof name - 1;
@@ -85,7 +113,14 @@ int main(int argc, char **argv) {
     if (video_init(scale)) { fprintf(stderr, "pwr: video init failed\n"); return 1; }
     fprintf(stderr, "pwr: boot (input=%s, audio=%s)\n", g_input_none ? "none" : "default", g_mute ? "muted" : "on");
 
+#ifdef PWR_DYNAMIC_GAME
+    if (!obj_dir || pwr_game_load(obj_dir)) { fprintf(stderr, "pwr: cannot load the compiled game code (--objs=%s)\n", obj_dir ? obj_dir : "?"); return 1; }
+    GuestFn entry = rt_lookup(0x100000);
+    if (!entry) { fprintf(stderr, "pwr: the loaded game code has no entry point\n"); return 1; }
+    volatile int *done = k_start_main(entry);
+#else
     volatile int *done = k_start_main(f_00100000);
+#endif
     double next = now_s(), last_stat = next; unsigned frames = 0;
     while (!*done) {
         input_update();

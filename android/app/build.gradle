@@ -1,0 +1,93 @@
+// Woohoo! Flight School for Android (beta). The APK holds the translator (Python, via Chaquopy), the runtime (C, NDK),
+// SDL2 and libtcc; the game itself is translated and compiled on the phone from the player's own dump.
+// Before the first build: android/fetch_deps.sh (SDL2 and tinycc sources into android/third_party).
+plugins {
+    id 'com.android.application'
+    id 'com.chaquo.python'
+}
+
+def repo = rootProject.file('..')
+def thirdParty = rootProject.file('third_party')
+def genPython = layout.buildDirectory.dir('generated/pwrPython').get().asFile
+def genAssets = layout.buildDirectory.dir('generated/pwrAssets').get().asFile
+
+// The repository's own build tools and headers, copied at configuration time so every task sees them:
+//   Python: tools/pipeline.py, cia.py, funcs.py and recomp/arm2c.py, unchanged
+//   assets: recomp/extra_seeds.txt; tcc/include = TinyCC's headers; tcc/pwr/table.h (tcc/pwr/cpu.h is in src/main/assets)
+copy {
+    from("$repo/tools") { include 'pipeline.py', 'cia.py', 'funcs.py' }
+    from("$repo/recomp") { include 'arm2c.py' }
+    into genPython
+}
+copy {
+    from("$repo/recomp") { include 'extra_seeds.txt' }
+    into genAssets
+}
+copy {
+    from("$repo/recomp/runtime") { include 'table.h' }
+    into new File(genAssets, 'tcc/pwr')
+}
+copy {
+    from("$thirdParty/tinycc/include")
+    into new File(genAssets, 'tcc/include')
+}
+
+android {
+    namespace = 'io.github.wylew.woohoo'
+    compileSdk = 36
+    ndkVersion = '28.2.13676358'
+
+    defaultConfig {
+        applicationId = 'io.github.wylew.woohoo'
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 1
+        versionName = '0.1.0-beta'
+        ndk { abiFilters 'arm64-v8a' }   // libtcc generates AArch64 code
+        externalNativeBuild {
+            cmake { arguments '-DANDROID_STL=c++_static', '-DANDROID_PLATFORM=android-24' }
+        }
+    }
+
+    buildFeatures { buildConfig = true }
+
+    externalNativeBuild {
+        cmake {
+            path = file('src/main/cpp/CMakeLists.txt')
+            version = '3.31.6'
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += ["$thirdParty/SDL2/android-project/app/src/main/java"]
+            assets.srcDirs += [genAssets]
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled = false
+            signingConfig = signingConfigs.debug   // beta: sideloaded, debug-signed
+        }
+    }
+
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+chaquopy {
+    defaultConfig {
+        version = '3.13'
+        pyc { src = false }   // no build-machine Python needed
+    }
+    sourceSets {
+        main { srcDir genPython }
+    }
+}
