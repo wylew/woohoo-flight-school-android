@@ -31,7 +31,8 @@ Install folder:
 import argparse, hashlib, json, os, platform, shutil, struct, subprocess, sys, threading, time
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(REPO, 'tools'))
+if os.path.isdir(os.path.join(REPO, 'tools')):   # absent on Android (Chaquopy), where cia.py sits next to this file
+    sys.path.insert(0, os.path.join(REPO, 'tools'))
 import cia  # noqa: E402
 
 # Titles the recompiler supports. code_sha256 is of the decompressed ExeFS .code (what arm2c.py translates).

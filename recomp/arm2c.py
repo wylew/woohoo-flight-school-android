@@ -12,7 +12,8 @@ Assumes standard returns (BX LR / POP {..PC} return to the caller); POP returns 
 """
 import os,struct,sys
 from collections import Counter,defaultdict
-sys.path.insert(0,os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','tools'))
+_tools=os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','tools')
+if os.path.isdir(_tools): sys.path.insert(0,_tools)   # absent on Android, where funcs.py sits next to this file
 import funcs as F
 
 # host functions run at the entry of a guest function (before its body), e.g. to print the game's debug log

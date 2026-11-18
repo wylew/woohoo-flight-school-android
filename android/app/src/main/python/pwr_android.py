@@ -13,6 +13,15 @@ import cia
 import pipeline
 
 
+def _prune_path():
+    """Drop a repository-layout <...>/tools entry (pipeline.py and arm2c.py add one on the PC). In the APK that folder
+    doesn't exist, and Chaquopy's asset importer raises FileNotFoundError for it instead of skipping it as CPython does."""
+    sys.path[:] = [p for p in sys.path if not (os.path.basename(os.path.normpath(p)) == 'tools' and not os.path.isdir(p))]
+
+
+_prune_path()
+
+
 class _Lines(io.TextIOBase):
     """stdout/stderr -> logger.log, line by line"""
     def __init__(self, logger): self.logger, self.buf = logger, ''
@@ -53,6 +62,7 @@ def recompile(extracted_dir, gen_dir, seeds_file, logger):
     out = _Lines(logger)
     try:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(out):
+            _prune_path()
             runpy.run_module('arm2c', run_name='__main__')
     finally:
         out.flush()
