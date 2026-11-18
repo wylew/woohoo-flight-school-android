@@ -39,10 +39,10 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          [ -f build.log ] || exit 0
+          [ -f build.log ] || { [ -f sdk.log ] && cp sdk.log build.log; } || exit 0
           python3 - <<'EOF'
           import re
-          lines = open('build.log', errors='replace').read().splitlines()
+          lines = open('build.log', errors='replace').read().splitlines()[-400:]
           keys = re.compile(r'error|Error|FAILED|What went wrong|undefined|cannot|not found|Could not|> ')
           hits = [l for l in lines if keys.search(l)][-80:]
           msg = '\n'.join(hits)[-20000:] or '\n'.join(lines[-80:])
