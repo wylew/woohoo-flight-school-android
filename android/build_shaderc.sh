@@ -31,10 +31,10 @@ fetch $S/third_party/spirv-headers https://github.com/KhronosGroup/SPIRV-Headers
 "$CMAKE_DIR/cmake" -S $S -B third_party/shaderc-build -G Ninja -DCMAKE_MAKE_PROGRAM="$CMAKE_DIR/ninja" \
     -DCMAKE_TOOLCHAIN_FILE="$NDK/build/cmake/android.toolchain.cmake" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-24 \
     -DANDROID_STL=c++_static -DCMAKE_BUILD_TYPE=Release \
-    -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_EXECUTABLES=ON -DSHADERC_SKIP_INSTALL=ON \
+    -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_EXECUTABLES=ON \
     -DSHADERC_SKIP_COPYRIGHT_CHECK=ON -DSHADERC_ENABLE_WERROR_COMPILE=OFF -DSHADERC_ENABLE_HLSL=OFF \
     -DSPIRV_SKIP_TESTS=ON -DSPIRV_SKIP_EXECUTABLES=ON -DSPIRV_WERROR=OFF -DENABLE_GLSLANG_BINARIES=OFF -DGLSLANG_TESTS=OFF \
-    -DENABLE_OPT=ON -DSKIP_SPIRV_TOOLS_INSTALL=OFF   # shaderc always gives glslang install rules, which need SPIRV-Tools'
+    -DENABLE_OPT=ON   # no SHADERC_SKIP_INSTALL: it drops SPIRV-Tools' install rules, which glslang's (always on) need
 "$CMAKE_DIR/ninja" -C third_party/shaderc-build shaderc_shared
 mkdir -p "$(dirname $OUT)"
 SO=$(find third_party/shaderc-build -name 'libshaderc_shared.so*' -type f | head -1)
