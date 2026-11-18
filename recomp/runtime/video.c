@@ -877,6 +877,11 @@ int video_frame(void) {
     VkPresentInfoKHR pi = { .sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR, .waitSemaphoreCount = 1, .pWaitSemaphores = &sem_done[idx], .swapchainCount = 1, .pSwapchains = &swap, .pImageIndices = &idx };
     r = vkQueuePresentKHR(queue, &pi);
     pthread_mutex_unlock(&queue_lock);
+#ifdef __ANDROID__
+    /* SUBOPTIMAL here means only that the compositor rotates the picture (preTransform identity, see create_swapchain):
+       the frame was shown. Size changes still recreate (OUT_OF_DATE, or the drawable-size check above). */
+    if (r == VK_SUBOPTIMAL_KHR) r = VK_SUCCESS;
+#endif
     if (r != VK_SUCCESS) { g_vid_present_fail++; g_vid_last_err = r; } else g_vid_presented++;
     if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_SUBOPTIMAL_KHR) recreate_swapchain();
     return 1;
