@@ -18,7 +18,9 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.File;
 import java.io.FileWriter;
+import java.io.RandomAccessFile;
 import java.io.IOException;
 
 /**
@@ -64,6 +66,15 @@ public class MainActivity extends Activity implements BuildTask.Listener {
         buttons.addView(pick, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         buttons.addView(play, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
         root.addView(buttons);
+        LinearLayout logButtons = new LinearLayout(this);
+        logButtons.setOrientation(LinearLayout.HORIZONTAL);
+        Button showLog = new Button(this); showLog.setText("Show game log");
+        showLog.setOnClickListener(v -> showGameLog());
+        Button shareLog = new Button(this); shareLog.setText("Share game log");
+        shareLog.setOnClickListener(v -> shareGameLog());
+        logButtons.addView(showLog, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        logButtons.addView(shareLog, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        root.addView(logButtons);
 
         SharedPreferences prefs = getSharedPreferences("settings", MODE_PRIVATE);
         controls = check("On-screen controls", prefs.getBoolean("controls", true));
@@ -147,6 +158,48 @@ public class MainActivity extends Activity implements BuildTask.Listener {
         } catch (IOException e) {
             Toast.makeText(this, "cannot save settings: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
+    }
+
+    /** the end of a text file (the game log grows by a stats line every few seconds) */
+    private static String tail(File f, int max) {
+        if (!f.exists()) return "";
+        try (RandomAccessFile r = new RandomAccessFile(f, "r")) {
+            long len = r.length(), from = Math.max(0, len - max);
+            byte[] b = new byte[(int) (len - from)];
+            r.seek(from); r.readFully(b);
+            return (from > 0 ? "[…]\n" : "") + new String(b, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "cannot read " + f + ": " + e.getMessage();
+        }
+    }
+
+    private String gameLog(int max) {
+        File prev = new File(paths.log.getPath() + ".1");
+        String cur = tail(paths.log, max);
+        if (cur.isEmpty() && !prev.exists()) return "No game log yet: press PLAY first.";
+        StringBuilder sb = new StringBuilder();
+        sb.append("Device: ").append(android.os.Build.MANUFACTURER).append(' ').append(android.os.Build.MODEL)
+          .append(", Android ").append(android.os.Build.VERSION.RELEASE).append(", ").append(android.os.Build.HARDWARE)
+          .append(", app ").append(BuildConfig.VERSION_NAME).append(" (").append(BuildConfig.VERSION_CODE).append(")\n\n");
+        sb.append("== last run (pwr.log)\n").append(cur);
+        if (prev.exists()) sb.append("\n\n== run before (pwr.log.1)\n").append(tail(prev, max / 4));
+        return sb.toString();
+    }
+
+    private void showGameLog() {
+        if (building) return;
+        log.setText(gameLog(64 * 1024));
+        log.setTextIsSelectable(true);
+        status.setText("Game log (newest at the bottom):");
+        logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private void shareGameLog() {
+        Intent i = new Intent(Intent.ACTION_SEND);
+        i.setType("text/plain");
+        i.putExtra(Intent.EXTRA_SUBJECT, "Woohoo! Flight School game log");
+        i.putExtra(Intent.EXTRA_TEXT, gameLog(200 * 1024));
+        startActivity(Intent.createChooser(i, "Share game log"));
     }
 
     private int dp(int v) { return (int) (v * getResources().getDisplayMetrics().density + 0.5f); }

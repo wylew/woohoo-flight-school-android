@@ -294,13 +294,24 @@ static int create_swapchain(void) {
     sc_format = fmts[0].format; VkColorSpaceKHR cs = fmts[0].colorSpace;
     for (uint32_t i = 0; i < nf; i++) if (fmts[i].format == VK_FORMAT_B8G8R8A8_UNORM) { sc_format = fmts[i].format; cs = fmts[i].colorSpace; }
     sc_extent = caps.currentExtent;
+#ifdef __ANDROID__
+    /* Android reports the surface in the display's natural (portrait) orientation with a rotation in currentTransform.
+       Render at the window's size, in landscape, unrotated (preTransform identity below), and let the compositor turn it. */
+    { int w, h; SDL_Vulkan_GetDrawableSize(win, &w, &h); if (w > 0 && h > 0) { sc_extent.width = (uint32_t)w; sc_extent.height = (uint32_t)h; } }
+    if (caps.maxImageExtent.width && sc_extent.width > caps.maxImageExtent.width && sc_extent.width > caps.maxImageExtent.height) sc_extent.width = caps.maxImageExtent.width;
+    if (caps.maxImageExtent.height && sc_extent.height > caps.maxImageExtent.height && sc_extent.height > caps.maxImageExtent.width) sc_extent.height = caps.maxImageExtent.height;
+    VkSurfaceTransformFlagBitsKHR pre = (caps.supportedTransforms & VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR) ? VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR : caps.currentTransform;
+    { static int said; if (!said) { said = 1; fprintf(stderr, "video: surface %ux%u transform %#x, swapchain %ux%u\n", caps.currentExtent.width, caps.currentExtent.height, (unsigned)caps.currentTransform, sc_extent.width, sc_extent.height); } }
+#else
+    VkSurfaceTransformFlagBitsKHR pre = caps.currentTransform;
+#endif
     if (sc_extent.width == UINT32_MAX) { int w, h; SDL_Vulkan_GetDrawableSize(win, &w, &h); sc_extent.width = (uint32_t)w; sc_extent.height = (uint32_t)h; }
     if (!sc_extent.width || !sc_extent.height) return 0;   /* minimised: try again next frame */
     uint32_t n = caps.minImageCount + 1; if (caps.maxImageCount && n > caps.maxImageCount) n = caps.maxImageCount;
     VkSwapchainCreateInfoKHR ci = { .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR, .surface = surf, .minImageCount = n,
         .imageFormat = sc_format, .imageColorSpace = cs, .imageExtent = sc_extent, .imageArrayLayers = 1,
         .imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-        .preTransform = caps.currentTransform, .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+        .preTransform = pre, .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
         .presentMode = VK_PRESENT_MODE_FIFO_KHR, .clipped = VK_TRUE, .oldSwapchain = swap };
     VkSwapchainKHR old = swap;
     VK(vkCreateSwapchainKHR(dev, &ci, NULL, &swap));

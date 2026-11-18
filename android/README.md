@@ -24,8 +24,8 @@ back to the slower software renderer.
 - Circle pad bottom left, D-pad above it, A/B/X/Y bottom right, L and R in the top corners, Select and Start at the
   bottom. **◐** hides the controls (tap it again to bring them back). A Bluetooth or USB gamepad works as on the PC.
 - Settings (resolution, filter, frame counter, on-screen controls) are on the start screen.
-- The game's log is `files/profile/pwr.log` in the app's storage (the previous run is kept as `pwr.log.1`), the build's
-  log `files/build.log`.
+- **Show game log** and **Share game log** on the start screen show or send the game's log (`files/profile/pwr.log`, plus
+  `pwr.log.1` from the run before) with the phone model. Please attach it to reports. The build's log is `files/build.log`.
 
 ## How it differs from the PC build
 
