@@ -28,6 +28,7 @@
 #include <math.h>
 #include <stddef.h>
 #include <pthread.h>
+#include "thread_name.h"
 #include <stdatomic.h>
 
 #define R(i) pica_regs[i]
@@ -579,7 +580,7 @@ static Pipe *pipe_get(const PKey *k, int sync, int urgent) {
         if (getenv("PWR_VK_PIPE_TRACE")) fprintf(stderr, "vk: pipeline compiled on the spot for target %08x\n", cur_c ? cur_c->addr : 0);
     } else {
         static pthread_t th; static int started;
-        if (!started) { started = 1; pthread_create(&th, NULL, pipe_worker, NULL); pthread_detach(th); }
+        if (!started) { started = 1; pthread_create(&th, NULL, pipe_worker, NULL); THREAD_NAME(th, "vk-pipelines"); pthread_detach(th); }
         atomic_fetch_add(&pipes_pending, 1);
         pthread_mutex_lock(&pq_lock);
         if (urgent) { pq_head = (pq_head + MAX_PIPES - 1) % MAX_PIPES; pq[pq_head] = (int)(e - pipes); }

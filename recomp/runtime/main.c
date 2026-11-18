@@ -55,6 +55,51 @@ static void settings_file(int *scale) {
     }
 }
 
+#ifdef __linux__
+#include <dirent.h>
+#include <unistd.h>
+/* every stats interval: the busiest threads' CPU use over it, by name (thread_name.h), e.g. "cpu: guest-main 95% gpu-lists 40%" */
+static void cpu_stats(double dt) {
+    enum { MAXT = 128 };
+    static struct { int tid; unsigned long long ticks; } prev[MAXT]; static int nprev;
+    struct { int tid; unsigned long long ticks; char name[20]; } cur[MAXT]; int n = 0;
+    DIR *d = opendir("/proc/self/task"); if (!d) return;
+    struct dirent *e; long hz = sysconf(_SC_CLK_TCK);
+    while ((e = readdir(d)) && n < MAXT) {
+        if (e->d_name[0] < '0' || e->d_name[0] > '9') continue;
+        char p[300], buf[512]; snprintf(p, sizeof p, "/proc/self/task/%s/stat", e->d_name);
+        FILE *f = fopen(p, "r"); if (!f) continue;
+        size_t len = fread(buf, 1, sizeof buf - 1, f); fclose(f); buf[len] = 0;
+        char *l = strchr(buf, '('), *r = strrchr(buf, ')'); if (!l || !r) continue;
+        unsigned long long ut = 0, st = 0;
+        if (sscanf(r + 2, "%*c %*d %*d %*d %*d %*d %*u %*u %*u %*u %*u %llu %llu", &ut, &st) != 2) continue;
+        cur[n].tid = atoi(e->d_name); cur[n].ticks = ut + st;
+        size_t nl = (size_t)(r - l - 1); if (nl > 19) nl = 19; memcpy(cur[n].name, l + 1, nl); cur[n].name[nl] = 0;
+        n++;
+    }
+    closedir(d);
+    int pct[MAXT];
+    for (int i = 0; i < n; i++) {
+        unsigned long long was = cur[i].ticks;   /* a new thread counts from 0 */
+        int found = 0; for (int j = 0; j < nprev; j++) if (prev[j].tid == cur[i].tid) { was = prev[j].ticks; found = 1; break; }
+        if (!found) was = 0;
+        pct[i] = (int)((cur[i].ticks - was) * 100.0 / hz / dt + 0.5);
+    }
+    char line[512]; int o = snprintf(line, sizeof line, "cpu:");
+    for (int k = 0; k < 8; k++) {   /* the busiest first */
+        int best = -1; for (int i = 0; i < n; i++) if (pct[i] >= 3 && (best < 0 || pct[i] > pct[best])) best = i;
+        if (best < 0) break;
+        o += snprintf(line + o, sizeof line - (size_t)o, " %s %d%%", cur[best].name, pct[best]); pct[best] = -1;
+        if (o >= (int)sizeof line) break;
+    }
+    if (nprev) fprintf(stderr, "%s\n", line);
+    for (int i = 0; i < n; i++) { prev[i].tid = cur[i].tid; prev[i].ticks = cur[i].ticks; }
+    nprev = n;
+}
+#else
+static void cpu_stats(double dt) { (void)dt; }
+#endif
+
 static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (double)t.tv_sec + t.tv_nsec * 1e-9; }
 
 int main(int argc, char **argv) {
@@ -164,6 +209,7 @@ int main(int argc, char **argv) {
             extern int pica_vk_npipes(void);
             fprintf(stderr, "pwr: vk draws=%llu batches=%llu target-uploads=%llu tex-uploads=%llu vs-compiled=%u vs-failed=%u passes=%llu gpu-ms=%llu fence-wait-ms=%llu verts=%llu idx=%llu pipelines=%d\n", g_vk_draws, g_vk_batches, g_vk_uploads, g_vk_tex_uploads, g_vsgen_compiled, g_vsgen_failed, g_vk_passes, g_vk_gpu_us / 1000, g_vk_wait_us / 1000, g_vk_verts, g_vk_idx, pica_vk_npipes());
             { extern unsigned long long g_gs_draws; if (g_gs_draws) fprintf(stderr, "pwr: geometry-shader draws=%llu (not implemented)\n", g_gs_draws); }
+            cpu_stats(t - last_stat);
             last_stat = t;
         }
     }

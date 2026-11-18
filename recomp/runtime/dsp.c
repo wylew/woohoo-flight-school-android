@@ -15,6 +15,7 @@
 #include "gpu.h"
 #include <SDL2/SDL.h>
 #include <pthread.h>
+#include "thread_name.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -370,7 +371,7 @@ static void *dsp_clock(void *arg) {
 
 void dsp_handle(KThread *t, uint32_t *cmd, KObject *s) {
     static int clock_started;
-    if (!clock_started) { clock_started = 1; pthread_t th; pthread_create(&th, NULL, dsp_clock, NULL); pthread_detach(th); }
+    if (!clock_started) { clock_started = 1; pthread_t th; pthread_create(&th, NULL, dsp_clock, NULL); THREAD_NAME(th, "dsp"); pthread_detach(th); }
     (void)t; (void)s;
     uint32_t id = cmd[0] >> 16;
     pthread_mutex_lock(&D);

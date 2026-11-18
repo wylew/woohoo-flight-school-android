@@ -4,6 +4,7 @@
 #include "kernel.h"
 #include "runtime.h"
 #include <pthread.h>
+#include "thread_name.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -232,7 +233,7 @@ static void svc_body(CPU *c, uint32_t num, uint32_t pc) {
         nt->cpu.r[0] = c->r[2]; nt->cpu.r[13] = c->r[3]; nt->cpu.r[14] = EXIT_MAGIC; nt->cpu.r[15] = c->r[1];
         ThreadStart *s = malloc(sizeof *s); s->t = nt; s->fn = fn;
         pthread_t th; pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, 64u << 20);
-        pthread_create(&th, &at, thread_main, s); pthread_detach(th);
+        pthread_create(&th, &at, thread_main, s); { char nm[16]; snprintf(nm, sizeof nm, "guest-%x", nt->handle); THREAD_NAME(th, nm); } pthread_detach(th);
         k_trace("CreateThread entry=%08x prio=%d cpu=%d lr=%08x -> %x", c->r[1], (int)c->r[0], (int)c->r[4], c->r[14], nt->handle);
         c->r[0] = RES_OK; c->r[1] = nt->handle; return;
     }
@@ -398,7 +399,7 @@ static void *main_thread(void *p) { MainStart *m = p; m->ret = k_run_main(m->ent
 volatile int *k_start_main(GuestFn entry) {
     static MainStart m; m.entry = entry;
     pthread_t th; pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at, 64u << 20);
-    pthread_create(&th, &at, main_thread, &m); pthread_detach(th);
+    pthread_create(&th, &at, main_thread, &m); THREAD_NAME(th, "guest-main"); pthread_detach(th);
     return &m.done;
 }
 

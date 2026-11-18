@@ -10,6 +10,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include <pthread.h>
+#include "thread_name.h"
 
 #define R(i) pica_regs[i]
 
@@ -869,7 +870,7 @@ static void pool_run(JobFn job) {
     if (!pool_n) {
         const char *e = getenv("PWR_GPU_THREADS"); pool_n = e ? atoi(e) : 4;
         if (pool_n < 1) pool_n = 1; if (pool_n > 32) pool_n = 32;
-        for (int i = 1; i < pool_n; i++) { pthread_t t; pthread_create(&t, NULL, pool_worker, (void *)(intptr_t)i); pthread_detach(t); }
+        for (int i = 1; i < pool_n; i++) { pthread_t t; pthread_create(&t, NULL, pool_worker, (void *)(intptr_t)i); THREAD_NAME(t, "sw-raster"); pthread_detach(t); }
     }
     if (pool_n == 1) { job(0, 1); return; }
     pthread_mutex_lock(&PM);

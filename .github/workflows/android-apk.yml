@@ -30,6 +30,16 @@ jobs:
           tail -3 sdk.log
       - name: Third-party sources (SDL2, tinycc)
         run: android/fetch_deps.sh
+      - name: Cache libshaderc (vertex shaders to SPIR-V on the phone)
+        uses: actions/cache@v4
+        with:
+          path: android/app/src/main/jniLibs
+          key: shaderc-arm64-${{ hashFiles('android/build_shaderc.sh') }}
+      - name: libshaderc for arm64 (once; cached)
+        shell: bash
+        run: |
+          set -o pipefail
+          android/build_shaderc.sh 2>&1 | tee shaderc.log | tail -5
       - name: Build the APK
         shell: bash
         run: |
@@ -39,7 +49,7 @@ jobs:
         if: failure()
         shell: bash
         run: |
-          [ -f build.log ] || { [ -f sdk.log ] && cp sdk.log build.log; } || exit 0
+          [ -f build.log ] || { [ -f shaderc.log ] && cp shaderc.log build.log; } || { [ -f sdk.log ] && cp sdk.log build.log; } || exit 0
           python3 - <<'EOF'
           import re
           lines = open('build.log', errors='replace').read().splitlines()[-400:]

@@ -35,7 +35,7 @@ back to the slower software renderer.
 | C compiler | GCC/Clang, `-O2`, statically linked | libtcc on the phone, objects loaded into memory at start (`app/src/main/cpp/pwr_game_load.c`) |
 | `cpu.h` | `recomp/runtime/cpu.h` | `app/src/main/assets/tcc/pwr/cpu.h`: same CPU struct, macros instead of inlines, runtime calls instead of GCC builtins |
 | Screens | layouts incl. stacked/side/large | default `single` (new in `video.c`, also on the PC: `--layout=single`) |
-| Vertex shaders | translated to SPIR-V with libshaderc | GPU interpreter (no libshaderc on the phone yet) |
+| Vertex shaders | translated to SPIR-V with libshaderc | the same: the APK carries libshaderc (`build_shaderc.sh`) |
 
 TinyCC does not optimize, so the game code runs slower than a GCC build; a modern phone should still have room.
 
@@ -46,6 +46,7 @@ pre-release. To build it yourself:
 
 ```bash
 android/fetch_deps.sh                      # SDL2 2.32.10 and tinycc sources into android/third_party
+android/build_shaderc.sh                   # libshaderc for arm64 into app/src/main/jniLibs (needs the NDK)
 gradle -p android assembleRelease          # Gradle 9.9 (JDK 17-25); or open android/ in Android Studio
 ```
 

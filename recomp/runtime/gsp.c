@@ -10,6 +10,7 @@
  * time and must not stall the host VBlank tick), then raises the completion interrupt. */
 #include "pica_int.h"
 #include <pthread.h>
+#include "thread_name.h"
 #include <time.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -370,7 +371,7 @@ void gsp_handle(KThread *t, uint32_t *cmd, KObject *s) {
         cmd[0] = HDR(5, 1, 0); cmd[1] = RES_OK; break;
     }
     case 0x0C: /* TriggerCmdReqQueue */
-        if (!gx_thread) pthread_create(&gx_thread, NULL, gx_worker, NULL);
+        if (!gx_thread) { pthread_create(&gx_thread, NULL, gx_worker, NULL); THREAD_NAME(gx_thread, "gpu-lists"); }
         {   /* PWR_PICA_LISTLOG=1: command lists as they are queued (pica.c logs them as they run) */
             static int ll = -1; if (ll < 0) ll = getenv("PWR_PICA_LISTLOG") != NULL;
             for (int q = 0; ll && shmem && shmem->addr && q < nthreads; q++) {
