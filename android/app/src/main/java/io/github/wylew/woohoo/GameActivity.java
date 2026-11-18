@@ -38,6 +38,11 @@ public class GameActivity extends SDLActivity {
             Log.e("woohoo", "setenv", e);
         }
         super.onCreate(b);
+        if (android.os.Build.VERSION.SDK_INT >= 28) {   // draw under the camera cut-out too: the whole screen is the game's
+            android.view.WindowManager.LayoutParams lp = getWindow().getAttributes();
+            lp.layoutInDisplayCutoutMode = android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(lp);
+        }
         if (mLayout != null && getIntent().getBooleanExtra(EXTRA_CONTROLS, true)) {
             mLayout.addView(new TouchControls(this), new RelativeLayout.LayoutParams(
                     RelativeLayout.LayoutParams.MATCH_PARENT, RelativeLayout.LayoutParams.MATCH_PARENT));

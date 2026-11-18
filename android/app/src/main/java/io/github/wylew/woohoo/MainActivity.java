@@ -151,7 +151,7 @@ public class MainActivity extends Activity implements BuildTask.Listener {
                 .putBoolean("linear", linear.isChecked()).putBoolean("fps", fps.isChecked()).apply();
         paths.profile.mkdirs();
         try (FileWriter w = new FileWriter(paths.settings)) {
-            w.write("{\n  \"layout\": \"single\",\n  \"auto_gameplay\": \"top\",\n  \"aspect\": \"keep\",\n"
+            w.write("{\n  \"fullscreen\": \"borderless\",\n  \"layout\": \"single\",\n  \"auto_gameplay\": \"top\",\n  \"aspect\": \"keep\",\n"
                     + "  \"filter\": \"" + (linear.isChecked() ? "linear" : "nearest") + "\",\n"
                     + "  \"resolution\": " + (hires.isChecked() ? 2 : 1) + ",\n"
                     + "  \"show_fps\": " + fps.isChecked() + ",\n  \"select_layout\": true\n}\n");

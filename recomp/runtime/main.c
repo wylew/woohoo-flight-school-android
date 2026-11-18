@@ -100,6 +100,36 @@ static void cpu_stats(double dt) {
 static void cpu_stats(double dt) { (void)dt; }
 #endif
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#include <pthread.h>
+/* stdout/stderr -> a pipe; a thread writes each line to the log file and to logcat (tag "pwr", for adb logcat -s pwr) */
+static FILE *log_file;
+static int log_pipe[2];
+static void *log_pump(void *arg) {
+    (void)arg;
+    char buf[4096]; size_t have = 0;
+    for (;;) {
+        ssize_t n = read(log_pipe[0], buf + have, sizeof buf - 1 - have);
+        if (n <= 0) break;
+        have += (size_t)n;
+        if (log_file) { fwrite(buf + have - (size_t)n, 1, (size_t)n, log_file); fflush(log_file); }
+        size_t start = 0;
+        for (size_t i = 0; i < have; i++) if (buf[i] == '\n') { buf[i] = 0; __android_log_write(ANDROID_LOG_INFO, "pwr", buf + start); start = i + 1; }
+        if (start == 0 && have == sizeof buf - 1) { buf[have] = 0; __android_log_write(ANDROID_LOG_INFO, "pwr", buf); have = 0; }
+        else { memmove(buf, buf + start, have - start); have -= start; }
+    }
+    return NULL;
+}
+static void android_log_to(const char *path) {
+    log_file = fopen(path, "w");
+    if (pipe(log_pipe)) return;
+    dup2(log_pipe[1], 2); dup2(log_pipe[1], 1);
+    setvbuf(stderr, NULL, _IOLBF, 0);
+    pthread_t th; pthread_create(&th, NULL, log_pump, NULL); pthread_detach(th);
+}
+#endif
+
 static double now_s(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return (double)t.tv_sec + t.tv_nsec * 1e-9; }
 
 int main(int argc, char **argv) {
@@ -116,7 +146,7 @@ int main(int argc, char **argv) {
         const char *lp = getenv("PWR_LOG");
         if (lp && *lp) {
             char old[4096]; snprintf(old, sizeof old, "%s.1", lp); rename(lp, old);
-            if (freopen(lp, "w", stderr)) { dup2(fileno(stderr), fileno(stdout)); setvbuf(stderr, NULL, _IOLBF, 0); }
+            android_log_to(lp);
         }
     }
 #endif
