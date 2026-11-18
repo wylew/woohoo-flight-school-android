@@ -342,6 +342,9 @@ int video_init(int scale) {
     VkApplicationInfo ai = { .sType = VK_STRUCTURE_TYPE_APPLICATION_INFO, .pApplicationName = "pwr", .apiVersion = VK_API_VERSION_1_3 };
     VkInstanceCreateInfo ici = { .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO, .pApplicationInfo = &ai, .enabledExtensionCount = ne, .ppEnabledExtensionNames = exts };
     VK(vkCreateInstance(&ici, NULL, &inst));
+#ifdef __ANDROID__
+    { extern void vkshim_set_instance(VkInstance); vkshim_set_instance(inst); }   /* android/app/src/main/cpp/vk_shim.c */
+#endif
     if (!SDL_Vulkan_CreateSurface(win, inst, &surf)) { fprintf(stderr, "video: surface: %s\n", SDL_GetError()); return -1; }
     uint32_t np = 8; VkPhysicalDevice pds[8]; VK(vkEnumeratePhysicalDevices(inst, &np, pds));
     for (uint32_t i = 0; i < np && !phys; i++) {

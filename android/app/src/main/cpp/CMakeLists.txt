@@ -60,7 +60,7 @@ list(APPEND SHADER_INCS ${CMAKE_BINARY_DIR}/shaders/pica_nd.frag.inc)
 set(RUNTIME_SOURCES main.c kernel.c services.c fs.c gsp.c pica.c video.c dsp.c pica_sw.c input.c pica_vk.c pica_vsgen.c mii.c
     freelook.c drawdist.c runtime.c)
 list(TRANSFORM RUNTIME_SOURCES PREPEND ${RT}/)
-add_library(main SHARED ${RUNTIME_SOURCES} ${SHADER_INCS} pwr_game_load.c pwr_tcc_helpers.c pwr_jni.c)
+add_library(main SHARED ${RUNTIME_SOURCES} ${SHADER_INCS} pwr_game_load.c pwr_tcc_helpers.c pwr_jni.c vk_shim.c)
 target_compile_definitions(main PRIVATE PWR_DYNAMIC_GAME)
 target_include_directories(main PRIVATE ${RT} ${CMAKE_BINARY_DIR}/shaders ${CMAKE_BINARY_DIR}/sdlinc)
 target_compile_options(main PRIVATE -O2 -Wno-unused-parameter)
