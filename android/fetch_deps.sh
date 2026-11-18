@@ -13,7 +13,15 @@ if [ ! -f third_party/SDL2/CMakeLists.txt ]; then
     mv "third_party/SDL2-$SDL_VER" third_party/SDL2
 fi
 if [ ! -f third_party/tinycc/libtcc.c ]; then
-    git clone https://repo.or.cz/tinycc.git third_party/tinycc
-    git -C third_party/tinycc checkout -q "$TCC_COMMIT"
+    # repo.or.cz is the home of tinycc; GitHub's TinyCC/tinycc mirrors it. A few tries, as either can fail now and then.
+    ok=
+    for try in 1 2 3; do
+        for url in https://repo.or.cz/tinycc.git https://github.com/TinyCC/tinycc.git; do
+            rm -rf third_party/tinycc
+            if git clone -q "$url" third_party/tinycc && git -C third_party/tinycc checkout -q "$TCC_COMMIT"; then ok=1; break 2; fi
+            echo "tinycc: $url failed, retrying"; sleep 5
+        done
+    done
+    [ -n "$ok" ] || { echo "tinycc: could not fetch $TCC_COMMIT"; exit 1; }
 fi
 echo "third_party ready: SDL2 $SDL_VER, tinycc $(git -C third_party/tinycc rev-parse --short HEAD)"

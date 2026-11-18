@@ -18,7 +18,9 @@ NDK=${ANDROID_NDK_HOME:-$ANDROID_HOME/ndk/$NDK_VER}
 CMAKE_DIR=$ANDROID_HOME/cmake/$CMAKE_VER/bin
 fetch() {   # fetch <dir> <url> <commit>
     [ -d "$1/.git" ] && return
-    git init -q "$1" && git -C "$1" fetch -q --depth 1 "$2" "$3" && git -C "$1" checkout -q FETCH_HEAD
+    git init -q "$1"
+    for try in 1 2 3; do git -C "$1" fetch -q --depth 1 "$2" "$3" && break; echo "fetch $2 failed, retrying"; sleep 5; done
+    git -C "$1" checkout -q FETCH_HEAD
 }
 S=third_party/shaderc
 fetch $S https://github.com/google/shaderc.git $SHADERC_COMMIT
