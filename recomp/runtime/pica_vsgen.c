@@ -153,6 +153,59 @@ static void emit_arith(uint32_t ins) {
 
 static int is_flow(uint32_t op) { return op >= 0x20 && op < 0x2e; }
 
+/* Structured output: PICA flow control is structured by design (IF/ELSE ranges, CALL ranges, LOOP bodies), so most
+   programs become plain GLSL if/else, inlined calls and for loops. Mobile GPU compilers handle that far better than the
+   switch(pc) dispatcher with its explicit stack in local arrays (Adreno: ~2x the frame rate). Returns -1 for anything
+   it does not handle (JMPC/JMPU, ranges that cross, deep call nesting, BREAK outside a loop): generate() then emits the
+   dispatcher. Semantics follow the dispatcher's stack: an IF/CALL body runs until pc reaches its end, a LOOP body runs
+   count+1 times with aL += increment after each pass, BREAK/BREAKC leave the innermost loop. */
+static int st_emit_budget;
+static int emit_block(uint32_t start, uint32_t end, int depth, int in_loop) {
+    if (depth > 12 || start > end || end > 4096) return -1;
+    char cnd[96];
+    for (uint32_t p = start; p < end; ) {
+        if (--st_emit_budget < 0) return -1;   /* inlining blew up: let the dispatcher handle it */
+        uint32_t ins = prog[p], op = ins >> 26, dst = (ins >> 10) & 0xfff, num = ins & 0xff;
+        if (!is_flow(op)) { emit_arith(ins); p++; continue; }
+        switch (op) {
+        case 0x21: case 0x2a: case 0x2b: p++; break;                                          /* NOP, EMIT, SETEMIT */
+        case 0x22: emit("    return;\n"); return 0;                                           /* END: nothing after it runs */
+        case 0x20: case 0x23:                                                                 /* BREAK / BREAKC */
+            if (!in_loop) return -1;
+            if (op == 0x23) { cond_expr(cnd, sizeof cnd, ins); emit("    if (%s) break;\n", cnd); }
+            else { emit("    break;\n"); return 0; }
+            p++; break;
+        case 0x24: case 0x25: case 0x26:                                                      /* CALL / CALLC / CALLU: inlined */
+            if (op == 0x24) snprintf(cnd, sizeof cnd, "true");
+            else if (op == 0x25) cond_expr(cnd, sizeof cnd, ins);
+            else snprintf(cnd, sizeof cnd, "bu(%uu)", (ins >> 22) & 15);
+            if (dst + num > 4096) return -1;
+            emit("    if (%s) {\n", cnd);
+            if (emit_block(dst, dst + num, depth + 1, 0)) return -1;   /* a call body does not see the caller's loop */
+            emit("    }\n");
+            p++; break;
+        case 0x27: case 0x28:                                                                 /* IFU / IFC */
+            if (op == 0x27) snprintf(cnd, sizeof cnd, "bu(%uu)", (ins >> 22) & 15); else cond_expr(cnd, sizeof cnd, ins);
+            if (dst <= p || dst > end || dst + num > end) return -1;
+            emit("    if (%s) {\n", cnd);
+            if (emit_block(p + 1, dst, depth + 1, in_loop)) return -1;
+            if (num) { emit("    } else {\n"); if (emit_block(dst, dst + num, depth + 1, in_loop)) return -1; }
+            emit("    }\n");
+            p = dst + num; break;
+        case 0x29: {                                                                          /* LOOP */
+            uint32_t i = (ins >> 22) & 3;
+            if (dst < p || dst + 1 > end) return -1;
+            emit("    aL = int((d.iu[%u] >> 8) & 0xffu);\n    for (int n%d = int(d.iu[%u] & 0xffu); n%d >= 0; n%d--) {\n", i, depth, i, depth, depth);
+            if (emit_block(p + 1, dst + 1, depth + 1, 1)) return -1;
+            emit("    aL += (int(d.iu[%u] << 8) >> 24);\n    }\n", i);
+            p = dst + 1; break;
+        }
+        default: return -1;                                                                   /* JMPC, JMPU */
+        }
+    }
+    return 0;
+}
+
 /* builds GLSL for the current registers; returns 0 on success */
 static int generate(void) {
     static uint8_t reach[4096], leader[4096];
@@ -190,14 +243,15 @@ static int generate(void) {
          /* attribute a: d.fa[a] = (byte offset of vertex 0, stride, type | count << 4 | 0x100 when read from raw); else
             the default d.fdef[a]. Types as the PICA loaders: 0 s8, 1 u8, 2 s16, 3 f32 (pica_vk.c fills these) */
          "uint rb(uint a) { return (raw[a >> 2] >> ((a & 3u) * 8u)) & 0xffu; }\n"
-         "vec4 fetch(uint a) {\n"
+         "float fc(uint t, uint p, uint k) {\n"
+         "  if (t == 3u) return uintBitsToFloat(raw[(p >> 2) + k]);\n"
+         "  if (t == 2u) { uint q = p + 2u * k; return float(int(((raw[q >> 2] >> ((q & 2u) * 8u)) & 0xffffu) << 16) >> 16); }\n"
+         "  uint b = rb(p + k); return t == 0u ? float(int(b << 24) >> 24) : float(b);\n"
+         "}\n"
+         "vec4 fetch(uint a) {\n"   /* the format is the same for every vertex of a draw: these branches don't diverge */
          "  uvec4 f = d.fa[a]; if ((f.z & 0x100u) == 0u) return d.fdef[a];\n"
          "  uint p = f.x + uint(gl_VertexIndex) * f.y, t = f.z & 3u, n = (f.z >> 4) & 7u; vec4 v = vec4(0, 0, 0, 1);\n"
-         "  for (uint k = 0u; k < n; k++) {\n"
-         "    if (t == 3u) v[k] = uintBitsToFloat(raw[(p >> 2) + k]);\n"
-         "    else if (t == 2u) { uint q = p + 2u * k; v[k] = float(int(((raw[q >> 2] >> ((q & 2u) * 8u)) & 0xffffu) << 16) >> 16); }\n"
-         "    else { uint b = rb(p + k); v[k] = t == 0u ? float(int(b << 24) >> 24) : float(b); }\n"
-         "  }\n"
+         "  if (n > 0u) v.x = fc(t, p, 0u);\n  if (n > 1u) v.y = fc(t, p, 1u);\n  if (n > 2u) v.z = fc(t, p, 2u);\n  if (n > 3u) v.w = fc(t, p, 3u);\n"
          "  return v;\n"
          "}\n"
          "layout(location = 0) out vec4 v_col; layout(location = 1) out vec4 v_uv01; layout(location = 2) out vec3 v_uv2tw;\n"
@@ -211,13 +265,24 @@ static int generate(void) {
          "vec4 max_(vec4 a, vec4 b) { return vec4(a.x > b.x ? a.x : b.x, a.y > b.y ? a.y : b.y, a.z > b.z ? a.z : b.z, a.w > b.w ? a.w : b.w); }\n"
          "vec4 min_(vec4 a, vec4 b) { return vec4(a.x < b.x ? a.x : b.x, a.y < b.y ? a.y : b.y, a.z < b.z ? a.z : b.z, a.w < b.w ? a.w : b.w); }\n"
          "vec4 cr(int i) { return (i >= 0 && i < 96) ? d.c[i] : vec4(1.0); }\n"
-         "bool bu(uint i) { return ((d.ib.x >> i) & 1u) != 0u; }\n"
-         "void main() {\n");
+         "bool bu(uint i) { return ((d.ib.x >> i) & 1u) != 0u; }\n");
     uint32_t nattr = (uint32_t)pica_num_attrs();
     uint64_t perm = (uint64_t)R(0x2BB) | (uint64_t)R(0x2BC) << 32;
-    for (int i = 0; i < 16; i++) emit("  vec4 v%d = vec4(0, 0, 0, 1), r%d = vec4(0), o%d = vec4(0);\n", i, i, i);
+    /* the guest registers: module scope, so that the structured body can be a function (END = return) */
+    for (int i = 0; i < 16; i++) emit("vec4 v%d = vec4(0, 0, 0, 1), r%d = vec4(0), o%d = vec4(0);\n", i, i, i);
+    emit("int a0x = 0, a0y = 0, aL = 0; bool cx = false, cy = false;\n");
+    static int force_dispatch = -1; if (force_dispatch < 0) force_dispatch = getenv("PWR_VK_VSGEN_DISPATCH") != NULL;   /* A/B switch */
+    size_t mark = olen;
+    int structured = 0;
+    if (!force_dispatch) {
+        emit("void run() {\n");
+        st_emit_budget = 20000;
+        if (!emit_block(entry, 4096, 0, 0)) { emit("}\n"); structured = 1; }
+        else olen = mark;   /* not structured: drop the partial body */
+    }
+    emit("void main() {\n");
     for (uint32_t a = 0; a < nattr && a < 12; a++) emit("  v%u = fetch(%uu);\n", (uint32_t)(perm >> (4 * a)) & 15, a);
-    emit("  int a0x = 0, a0y = 0, aL = 0; bool cx = false, cy = false;\n");
+    if (structured) { emit("  run();\n"); goto outputs; }
     if (uses_stack) emit("  uint st_final[16], st_ret[16], st_start[16]; int st_rep[16], st_inc[16]; bool st_loop[16]; int sp = 0;\n");
     emit("  uint pc = %uu;\n  for (int steps = 0; steps < 65536; steps++) {\n", entry);
     if (uses_stack)
@@ -276,6 +341,7 @@ static int generate(void) {
     }
     #undef PUSH
     emit("    default: pc = 4096u; break;\n    }\n    if (pc >= 4096u) break;\n  }\n");
+outputs:;
     /* output map */
     char sem[24][16];
     for (int i = 0; i < 24; i++) snprintf(sem[i], sizeof sem[i], "%s", i == 3 || i == 11 ? "1.0" : "0.0");
@@ -314,6 +380,10 @@ VkShaderModule pica_vsgen_module(VkDevice dev) {
     for (int i = 0; i < ncache; i++) if (cache[i].key == key) return cache[i].mod;
     VkShaderModule mod = VK_NULL_HANDLE;
     if (!generate()) {
+        if (getenv("PWR_VK_VSDUMP")) {   /* PWR_VK_VSDUMP=1: each generated shader to vs_<key>.vert in the current folder */
+            char fn[64]; snprintf(fn, sizeof fn, "vs_%016llx.vert", (unsigned long long)key);
+            FILE *f = fopen(fn, "w"); if (f) { fwrite(out, 1, olen, f); fclose(f); }
+        }
         sc_result r = sc_compile_into_spv(compiler, out, olen, 0 /* vertex */, "pica_vs_gen.vert", "main", options);
         if (r && sc_result_get_compilation_status(r) == 0) {
             VkShaderModuleCreateInfo ci = { .sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO, .codeSize = sc_result_get_length(r), .pCode = (const uint32_t *)sc_result_get_bytes(r) };
