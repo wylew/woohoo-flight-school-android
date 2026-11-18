@@ -745,8 +745,10 @@ static void replay(const DrawRec *r, VkPipeline *bound) {
 }
 
 static void begin_rendering(Surf *c, Surf *d) {
-    /* an earlier pass may have written these attachments, or a target this pass samples */
-    barrier_all(cb_draw, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
+    /* an earlier pass may have written these attachments, or a target this pass samples.
+       PWR_VK_PASSBAR=0 leaves the barrier out: a measurement switch only (what it costs on tiling GPUs), not correct */
+    static int passbar = -1; if (passbar < 0) { const char *e = getenv("PWR_VK_PASSBAR"); passbar = !(e && !strcmp(e, "0")); }
+    if (passbar) barrier_all(cb_draw, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT,
                 VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                 VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                 VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_SHADER_READ_BIT);

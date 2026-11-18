@@ -102,6 +102,21 @@ public class MainActivity extends Activity implements BuildTask.Listener {
         root.addView(help);
         setContentView(root);
         refresh();
+        devLaunch(getIntent());
+    }
+
+    @Override protected void onNewIntent(Intent i) { super.onNewIntent(i); devLaunch(i); }
+
+    /** For testing over USB: adb shell am start -n io.github.wylew.woohoo/.MainActivity --ez play true [--es env "PWR_X=1;PWR_Y=2"]
+     *  starts the game straight away, with extra runtime environment variables (PWR_* only). */
+    private void devLaunch(Intent in) {
+        if (in == null || !in.getBooleanExtra("play", false) || !BuildTask.isBuilt(paths)) return;
+        in.removeExtra("play");
+        saveSettings();
+        Intent i = new Intent(this, GameActivity.class);
+        i.putExtra(GameActivity.EXTRA_CONTROLS, controls.isChecked());
+        if (in.getStringExtra("env") != null) i.putExtra(GameActivity.EXTRA_ENV, in.getStringExtra("env"));
+        startActivity(i);
     }
 
     private CheckBox check(String label, boolean on) {

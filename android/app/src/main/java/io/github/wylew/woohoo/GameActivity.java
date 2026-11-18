@@ -11,6 +11,7 @@ import org.libsdl.app.SDLActivity;
 /** The game: SDL2 runs SDL_main in libmain.so (recomp/runtime/main.c), with the on-screen controls on top. */
 public class GameActivity extends SDLActivity {
     static final String EXTRA_CONTROLS = "controls";
+    static final String EXTRA_ENV = "env";   // "PWR_A=1;PWR_B=x" (MainActivity.devLaunch)
 
     static native void nativeButton(int pos, boolean down);
     static native void nativeStick(int x, int y);
@@ -34,6 +35,11 @@ public class GameActivity extends SDLActivity {
             Os.setenv("PWR_TCC_DIR", paths.tcc.getAbsolutePath(), true);
             Os.setenv("PWR_CWD", paths.profile.getAbsolutePath(), true);
             Os.setenv("SDL_IOS_ORIENTATIONS", "LandscapeLeft LandscapeRight", true);
+            String env = getIntent().getStringExtra(EXTRA_ENV);
+            if (env != null) for (String kv : env.split(";")) {
+                int eq = kv.indexOf('=');
+                if (eq > 0 && kv.startsWith("PWR_")) { Os.setenv(kv.substring(0, eq).trim(), kv.substring(eq + 1), true); Log.i("woohoo", "env " + kv); }
+            }
         } catch (ErrnoException e) {
             Log.e("woohoo", "setenv", e);
         }
