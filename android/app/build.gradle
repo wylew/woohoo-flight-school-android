@@ -65,10 +65,21 @@ android {
         }
     }
 
+    signingConfigs {
+        // A fixed key for the sideloaded beta, so each new APK installs over the last one. Public on purpose: it only
+        // ties beta builds to each other and is not used for anything else.
+        beta {
+            storeFile = file('beta.keystore')
+            storePassword = 'android'
+            keyAlias = 'beta'
+            keyPassword = 'android'
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled = false
-            signingConfig = signingConfigs.debug   // beta: sideloaded, debug-signed
+            signingConfig = signingConfigs.beta
         }
     }
 

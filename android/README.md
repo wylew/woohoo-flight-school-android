@@ -50,4 +50,4 @@ gradle -p android assembleRelease          # Gradle 9.9 (JDK 17-25); or open and
 ```
 
 Needs the Android SDK with NDK `28.2.13676358`, CMake `3.31.6` and platform 36. Accept their licences yourself first
-(`sdkmanager --licenses`). Output: `android/app/build/outputs/apk/release/app-release.apk` (debug-signed, for sideloading).
+(`sdkmanager --licenses`). Output: `android/app/build/outputs/apk/release/app-release.apk` (signed with the public beta key `app/beta.keystore`, for sideloading).
